@@ -23,6 +23,13 @@ DB: Supabase `inventario-cliente` (tabla pública `items`, 5.411 productos).
 - Causa 1: el botón "Ver solo editados" quedaba activo sin editados → mostraba 0 sin explicación. Ahora el botón dice "✓ Solo editados" cuando está activo y hay mensaje claro en cada estado vacío.
 - Causa 2: si la red fallaba a mitad de carga quedaba en 0. Ahora reintenta 3 veces y muestra botón "Reintentar".
 
+## 2026-10-02 — Factor directo + vista previa con botón Guardar
+- luigi pidió: (1) el campo es ahora el factor directo (0.6) en vez del % (40%); (2) al calcular no se guarda solo, sale un botón Guardar.
+- Cambios: input "Factor costo" (0–1, ej. 0.6; si escriben ≥1 avisa el formato). Precios: Venta = Costo ÷ factor. Costos: Costo = Venta × factor.
+- Nuevo flujo: calcular → valores en pantalla (filas amarillas) + barra inferior "N productos con valores calculados sin guardar" con **💾 Guardar** y **✕ Descartar**. Guardar persiste venta_usd y costo_usd en lotes; Descartar revierte a los valores previos al cálculo. Cambiar de pestaña con cálculos pendientes pide confirmación.
+- Edición manual de una fila calculada la guarda (autoguardado) y la saca de pendientes.
+- Test `test/smoke.mjs`: escenarios [5] (preview sin guardar → Guardar hace 1 POST con los valores) y [6] (precios + Descartar revierte). 22 checks OK.
+
 ## 2026-10-02 — Calcular costos desde venta
 - luigi pidió el cálculo inverso para Cosméticos: conociendo el precio de venta, Costo = Venta × (1 − margen). Ej: venta $10, margen 40% → costo $6,00. Redondeo a 2 decimales.
 - Nuevo botón "🧮 Calcular costos" junto a "Calcular precios". Usa el mismo campo de margen, aplica a TODOS los artículos de la pestaña activa (no solo a la vista filtrada), solo a los que tienen venta > 0, y pide confirmación indicando la sede y la cantidad antes de guardar en lotes.

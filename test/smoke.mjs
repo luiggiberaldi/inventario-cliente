@@ -30,6 +30,7 @@ function makeEl() {
 
 function buildSandbox({ failFetch = false } = {}) {
   const els = {};
+  const calls = [];
   const document = {
     getElementById: (id) => (els[id] ??= makeEl()),
     createElement: () => ({ src: '', onload: null, onerror: null }),
@@ -39,10 +40,12 @@ function buildSandbox({ failFetch = false } = {}) {
     SUPABASE_URL: 'https://fake.supabase.co',
     SUPABASE_ANON_KEY: 'fake-key',
     document,
-    fetch: async (url) => {
+    calls,
+    fetch: async (url, opts = {}) => {
+      calls.push({ url: String(url), method: opts.method || 'GET', body: opts.body || null });
       if (failFetch) throw new Error('network down');
       if (String(url).includes('/rest/v1/items?')) {
-        return { ok: true, json: async () => FAKE_ITEMS };
+        return { ok: true, json: async () => JSON.parse(JSON.stringify(FAKE_ITEMS)) };
       }
       return { ok: true, json: async () => ({}) };
     },
@@ -103,22 +106,51 @@ async function scenarioFail() {
 }
 
 async function scenarioCostos() {
-  console.log('\n[5] Calcular costos desde venta (margen 40%)');
+  console.log('\n[5] Calcular costos con factor 0.6: vista previa + Guardar');
   const ctx = buildSandbox();
   runInContext(js, ctx);
   for (let i = 0; i < 100 && get(ctx, 'datos.length') === 0 && !get(ctx, 'errorCarga'); i++) await sleep(100);
-  runInContext("document.getElementById('margen').value = '40'", ctx);
-  await runInContext('(async () => { await calcularCostos(); })()', ctx);
+  runInContext("document.getElementById('factor').value = '0.6'", ctx);
+  runInContext('calcularCostos()', ctx);
   // 3.57 * 0.6 = 2.142 -> 2.14 ; 4.2 * 0.6 = 2.52
   check('costo de MAYONESA = 2.14', get(ctx, 'datos[0].costo_usd') === 2.14);
   check('costo de ACEITE = 2.52', get(ctx, 'datos[1].costo_usd') === 2.52);
   check('la tabla muestra el costo calculado', ctx.__els['cuerpo'].innerHTML.includes('2.14'));
+  check('NO se guardó todavía (vista previa)', ctx.calls.filter(c => c.method !== 'GET').length === 0);
+  check('barra de Guardar visible', ctx.__els['savebar'].style.display === 'flex');
+  check('texto de la barra', ctx.__els['savebarText'].textContent.includes('2 productos'));
+
+  await runInContext('(async () => { await guardarCalculados(); })()', ctx);
+  const posts = ctx.calls.filter(c => c.method === 'POST');
+  check('se hizo 1 POST al guardar', posts.length === 1);
+  const body = JSON.parse(posts[0].body);
+  check('el POST lleva costo_usd 2.14', body[0].costo_usd === 2.14 && body[0].id === 'a1');
+  check('barra de Guardar oculta tras guardar', ctx.__els['savebar'].style.display === 'none');
+  check('no quedan pendientes', get(ctx, 'pendientesCalc.size') === 0);
+}
+
+async function scenarioPreciosDescartar() {
+  console.log('\n[6] Calcular precios con factor 0.6 y Descartar');
+  const ctx = buildSandbox();
+  runInContext(js, ctx);
+  for (let i = 0; i < 100 && get(ctx, 'datos.length') === 0 && !get(ctx, 'errorCarga'); i++) await sleep(100);
+  runInContext("document.getElementById('factor').value = '0.6'", ctx);
+  runInContext('calcularPrecios()', ctx);
+  // solo a1 tiene costo: 2.5 / 0.6 = 4.1666 -> 4.17
+  check('venta de MAYONESA = 4.17', get(ctx, 'datos[0].venta_usd') === 4.17);
+  check('ACEITE sin costo no se toca', get(ctx, 'datos[1].venta_usd') === 4.2);
+  check('1 pendiente', get(ctx, 'pendientesCalc.size') === 1);
+  runInContext('descartarCalculados()', ctx);
+  check('venta vuelve a 3.57', get(ctx, 'datos[0].venta_usd') === 3.57);
+  check('nada pendiente tras descartar', get(ctx, 'pendientesCalc.size') === 0);
+  check('barra oculta tras descartar', ctx.__els['savebar'].style.display === 'none');
 }
 
 try {
   await scenarioLoad();
   await scenarioFail();
   await scenarioCostos();
+  await scenarioPreciosDescartar();
 } catch (e) {
   console.log('  FAIL excepción en el script: ' + e.message);
   failures++;

@@ -23,6 +23,11 @@ DB: Supabase `inventario-cliente` (tabla pública `items`, 5.411 productos).
 - Causa 1: el botón "Ver solo editados" quedaba activo sin editados → mostraba 0 sin explicación. Ahora el botón dice "✓ Solo editados" cuando está activo y hay mensaje claro en cada estado vacío.
 - Causa 2: si la red fallaba a mitad de carga quedaba en 0. Ahora reintenta 3 veces y muestra botón "Reintentar".
 
+## 2026-10-02 — "Existencia" → "Stock", stock siempre entero
+- luigi pidió renombrar la columna a Stock y sin decimales.
+- Cambios solo de interfaz (la columna en DB sigue llamándose `existencia`): encabezado, tarjetas móvil, textos de ayuda y Excel ahora dicen STOCK; el stock se muestra redondeado, el input es de paso 1 y al editar se redondea con Math.round antes de guardar. El estimado usa el stock redondeado.
+- Test `test/smoke.mjs`: escenario [7] (5.7→6 en pantalla, estimado $25.20, editar 7.8→8). 26 checks OK.
+
 ## 2026-10-02 — Factor directo + vista previa con botón Guardar
 - luigi pidió: (1) el campo es ahora el factor directo (0.6) en vez del % (40%); (2) al calcular no se guarda solo, sale un botón Guardar.
 - Cambios: input "Factor costo" (0–1, ej. 0.6; si escriben ≥1 avisa el formato). Precios: Venta = Costo ÷ factor. Costos: Costo = Venta × factor.

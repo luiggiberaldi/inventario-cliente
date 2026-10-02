@@ -54,7 +54,7 @@
 <body>
 <header>
   <h1>Revisa tu inventario</h1>
-  <p>Busca cada producto y corrige la <b>existencia</b> o el <b>precio</b> si hay algún error. Se guarda solo.</p>
+  <p>Busca cada producto y corrige el <b>stock</b> o el <b>precio</b> si hay algún error. Se guarda solo.</p>
 </header>
 <div class="tabs">
   <button id="tab-bodega" class="active" onclick="cambiarSede('bodega')">🏪 Bodega</button>
@@ -80,12 +80,12 @@
   <button class="btn btn-export" onclick="guardarCalculados()">💾 Guardar</button>
   <button class="btn btn-filter" onclick="descartarCalculados()">✕ Descartar</button>
 </div>
-<div class="hint">Todo es editable: toca <b>nombre</b>, <b>código</b>, <b>costo</b>, <b>venta</b> o <b>existencia</b> para corregir. Se guarda solo. Las filas en amarillo fueron modificadas.</div>
+<div class="hint">Todo es editable: toca <b>nombre</b>, <b>código</b>, <b>costo</b>, <b>venta</b> o <b>stock</b> para corregir. Se guarda solo. Las filas en amarillo fueron modificadas.</div>
 <div class="wrap">
   <table>
     <thead><tr>
       <th>Producto</th><th>Código</th><th style="text-align:right">Costo USD</th><th style="text-align:right">Venta USD</th>
-      <th style="text-align:right">Existencia</th><th style="text-align:right">Estimado USD</th>
+      <th style="text-align:right">Stock</th><th style="text-align:right">Estimado USD</th>
     </tr></thead>
     <tbody id="cuerpo"></tbody>
   </table>
@@ -114,8 +114,8 @@ let snapshotCalc = {};           // id -> {venta_usd, costo_usd} antes del cálc
 const timers = {};
 
 const HEADERS = {
-  bodega: ['PRODUCTO','CODIGO','COSTO USD','VENTA USD','EXISTENCIA','ESTIMADO USD'],
-  cosmeticos: ['PRODUCTO','CODIGO','COSTO USD','VENTA','EXISTENCIA','ESTIMADO']
+  bodega: ['PRODUCTO','CODIGO','COSTO USD','VENTA USD','STOCK','ESTIMADO USD'],
+  cosmeticos: ['PRODUCTO','CODIGO','COSTO USD','VENTA','STOCK','ESTIMADO']
 };
 
 function aviso(msg) {
@@ -196,13 +196,14 @@ function render() {
     tb.innerHTML = `<tr><td colspan="6" style="text-align:center;padding:40px 20px;color:#666;font-size:15px">${msg}</td></tr>`;
   } else {
   tb.innerHTML = rows.map(d => {
-    const est = ((Number(d.venta_usd) || 0) * (Number(d.existencia) || 0)).toFixed(2);
+    const stock = Math.round(Number(d.existencia) || 0);
+    const est = ((Number(d.venta_usd) || 0) * stock).toFixed(2);
     return `<tr data-id="${d.id}" class="${esEditado(d) ? 'edited' : ''}">
       <td data-label="Producto"><input class="cell cell-text" type="text" value="${esc(d.producto || '')}" data-campo="producto" oninput="editar('${d.id}', this)"></td>
       <td data-label="Código"><input class="cell cell-text" type="text" value="${esc(d.codigo || '')}" data-campo="codigo" oninput="editar('${d.id}', this)"></td>
       <td class="num" data-label="Costo USD"><input class="cell" type="number" step="0.01" min="0" value="${d.costo_usd ?? ''}" data-campo="costo_usd" oninput="editar('${d.id}', this)"></td>
       <td class="num" data-label="Venta USD"><input class="cell" type="number" step="0.01" min="0" value="${d.venta_usd ?? ''}" data-campo="venta_usd" oninput="editar('${d.id}', this)"></td>
-      <td class="num" data-label="Existencia"><input class="cell" type="number" step="0.001" min="0" value="${d.existencia ?? ''}" data-campo="existencia" oninput="editar('${d.id}', this)"></td>
+      <td class="num" data-label="Stock"><input class="cell" type="number" step="1" min="0" value="${d.existencia == null ? '' : Math.round(d.existencia)}" data-campo="existencia" oninput="editar('${d.id}', this)"></td>
       <td class="num" data-label="Estimado USD">$${est}</td></tr>`;
   }).join('');
   }
@@ -219,7 +220,9 @@ function editar(id, input) {
   if (!d) return;
   const campo = input.dataset.campo;
   const esTexto = campo === 'producto' || campo === 'codigo';
-  d[campo] = esTexto ? (input.value.trim() === '' ? null : input.value.trim()) : (input.value === '' ? null : Number(input.value));
+  let val = input.value === '' ? null : Number(input.value);
+  if (campo === 'existencia' && val !== null) val = Math.round(val); // stock siempre entero
+  d[campo] = esTexto ? (input.value.trim() === '' ? null : input.value.trim()) : val;
   const tr = input.closest('tr');
   tr.classList.add('saving');
   clearTimeout(timers[id]);
@@ -361,8 +364,8 @@ function exportar() {
   const head = HEADERS[sede];
   const rows = datos.map(d => [
     d.producto, d.codigo || '', Number(d.costo_usd) || 0,
-    Number(d.venta_usd) || 0, Number(d.existencia) || 0,
-    Number(((Number(d.venta_usd) || 0) * (Number(d.existencia) || 0)).toFixed(2))
+    Number(d.venta_usd) || 0, Math.round(Number(d.existencia) || 0),
+    Number(((Number(d.venta_usd) || 0) * Math.round(Number(d.existencia) || 0)).toFixed(2))
   ]);
   const ws = XLSX.utils.aoa_to_sheet([head, ...rows]);
   ws['!cols'] = [{ wch: 42 }, { wch: 18 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 14 }];

@@ -16,7 +16,7 @@ const js = scripts[scripts.length - 1];
 
 const FAKE_ITEMS = [
   { id: 'a1', sede: 'bodega', producto: 'MAYONESA KRAFT 500 GR', codigo: 'MK500', costo_usd: 2.5, venta_usd: 3.57, existencia: 10 },
-  { id: 'a2', sede: 'bodega', producto: 'ACEITE Vatel 1L', codigo: 'AV1', costo_usd: null, venta_usd: 4.2, existencia: 5 },
+  { id: 'a2', sede: 'bodega', producto: 'ACEITE Vatel 1L', codigo: 'AV1', costo_usd: null, venta_usd: 4.2, existencia: 5.7 },
 ];
 
 function makeEl() {
@@ -146,11 +146,27 @@ async function scenarioPreciosDescartar() {
   check('barra oculta tras descartar', ctx.__els['savebar'].style.display === 'none');
 }
 
+async function scenarioStock() {
+  console.log('\n[7] Stock entero y redondeado');
+  const ctx = buildSandbox();
+  runInContext(js, ctx);
+  for (let i = 0; i < 100 && get(ctx, 'datos.length') === 0 && !get(ctx, 'errorCarga'); i++) await sleep(100);
+  const cuerpo = ctx.__els['cuerpo'].innerHTML;
+  check('etiqueta "Stock" en la columna', cuerpo.includes('data-label="Stock"'));
+  check('stock 5.7 se muestra como 6', cuerpo.includes('value="6"'));
+  check('estimado usa stock redondeado ($25.20)', cuerpo.includes('$25.20'));
+  // editar con decimal -> se redondea al guardar en memoria
+  runInContext(`editar('a2', { value: '7.8', dataset: { campo: 'existencia' }, closest: () => ({ classList: { add(){}, remove(){}, toggle(){} } }) })`, ctx);
+  check('editar 7.8 queda en 8', get(ctx, 'datos.find(x=>x.id==="a2").existencia') === 8);
+  runInContext('clearTimeout(timers["a2"])', ctx); // no disparar el autoguardado en el test
+}
+
 try {
   await scenarioLoad();
   await scenarioFail();
   await scenarioCostos();
   await scenarioPreciosDescartar();
+  await scenarioStock();
 } catch (e) {
   console.log('  FAIL excepción en el script: ' + e.message);
   failures++;

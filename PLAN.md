@@ -19,8 +19,15 @@ Excel corregidos, listos para el importador.
 
 ## Flujo
 1. Cliente abre el link → pestaña Bodega o Cosméticos → busca por nombre o código.
-2. Edita EXISTENCIA / VENTA USD inline → se guarda solo en Supabase (con debounce).
-3. Luigi abre el link → "Descargar Excel" por sede → obtiene el inventario corregido.
+2. Edita COSTO, EXISTENCIA / VENTA USD inline → se guarda solo en Supabase (con debounce).
+3. Con costos cargados: pone el % de **margen real** y toca "Calcular precios" →
+   `precio = costo ÷ (1 − margen)`. Se aplica a los productos con costo de la vista actual.
+4. Luigi abre el link → "Descargar Excel" por sede → obtiene el inventario corregido
+   (columnas originales + COSTO USD).
+
+## Campos editables
+- `costo_usd` (columna agregada 2026-10-02), `venta_usd`, `existencia`.
+- No se agregan ni eliminan productos (decisión de Luigi).
 
 ## Archivos
 - `index.html` — app completa (pestañas, buscador, tabla editable, export).

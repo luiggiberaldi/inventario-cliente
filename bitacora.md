@@ -23,6 +23,13 @@ DB: Supabase `inventario-cliente` (tabla pública `items`, 5.411 productos).
 - Causa 1: el botón "Ver solo editados" quedaba activo sin editados → mostraba 0 sin explicación. Ahora el botón dice "✓ Solo editados" cuando está activo y hay mensaje claro en cada estado vacío.
 - Causa 2: si la red fallaba a mitad de carga quedaba en 0. Ahora reintenta 3 veces y muestra botón "Reintentar".
 
+## 2026-10-02 — Signo $ + tasa BCV redondeada hacia arriba
+- luigi pidió el signo $ y el cálculo a tasa BCV, con la tasa redondeada hacia arriba.
+- Cambios: montos de costo/venta con signo $; debajo de cada monto en USD se muestra su equivalente en Bs (formato venezolano: Bs 3.095,19).
+- Nuevo campo "Tasa BCV": se llena solo al abrir la app desde https://ve.dolarapi.com/v1/dolares/oficial (promedio, con Math.ceil; hoy 866.56 → 867) y se puede corregir a mano; al cambiarla se recalculan los Bs en pantalla.
+- El Excel ahora incluye columnas COSTO BS, VENTA BS y ESTIMADO BS.
+- Test `test/smoke.mjs`: escenario [8] (fmtBs, sin tasa no hay Bs, valores con tasa 867). 32 checks OK.
+
 ## 2026-10-02 — "Existencia" → "Stock", stock siempre entero
 - luigi pidió renombrar la columna a Stock y sin decimales.
 - Cambios solo de interfaz (la columna en DB sigue llamándose `existencia`): encabezado, tarjetas móvil, textos de ayuda y Excel ahora dicen STOCK; el stock se muestra redondeado, el input es de paso 1 y al editar se redondea con Math.round antes de guardar. El estimado usa el stock redondeado.

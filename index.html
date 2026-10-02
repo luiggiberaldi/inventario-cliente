@@ -35,6 +35,8 @@
   .hint { padding: 10px 20px; font-size: 13px; color: #666; background: #fff; border-bottom: 1px solid #e2e6ea; }
   .status { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); background: #0f2a43; color: #fff; padding: 10px 20px; border-radius: 24px; font-size: 14px; display: none; z-index: 20; max-width: 90vw; text-align: center; }
   .savebar { position: sticky; bottom: 0; z-index: 10; background: #0f2a43; color: #fff; padding: 12px 20px; display: flex; gap: 10px; align-items: center; justify-content: center; font-size: 14px; font-weight: 600; flex-wrap: wrap; }
+  .cur { font-weight: 700; }
+  .bs { font-size: 11px; color: #68727d; margin-top: 2px; white-space: nowrap; }
   /* Tarjetas en móvil */
   @media (max-width: 640px) {
     thead { display: none; }
@@ -73,7 +75,10 @@
   </label>
   <button class="btn btn-filter" onclick="calcularPrecios()">🧮 Calcular precios</button>
   <button class="btn btn-filter" onclick="calcularCostos()">🧮 Calcular costos</button>
-  <span style="font-size:12px;color:#666">Precios: Venta = Costo ÷ factor · Costos: Costo = Venta × factor. Se calculan en pantalla; se guardan con 💾 Guardar.</span>
+  <label style="font-size:14px;font-weight:600">Tasa BCV:
+    <input id="tasa" type="number" step="1" min="0" placeholder="—" oninput="tasaBCV = Number(this.value) || 0; render()" style="width:80px;padding:8px;border:1px solid #ccd3da;border-radius:6px;font-size:14px">
+  </label>
+  <span style="font-size:12px;color:#666">Precios: Venta = Costo ÷ factor · Costos: Costo = Venta × factor. Se calculan en pantalla; se guardan con 💾 Guardar. Tasa redondeada hacia arriba.</span>
 </div>
 <div class="savebar" id="savebar" style="display:none">
   <span id="savebarText"></span>
@@ -111,11 +116,12 @@ let soloEditados = false;
 let errorCarga = false;
 let pendientesCalc = new Set();  // ids con valores calculados aún sin guardar
 let snapshotCalc = {};           // id -> {venta_usd, costo_usd} antes del cálculo
+let tasaBCV = 0;                 // redondeada hacia arriba
 const timers = {};
 
 const HEADERS = {
-  bodega: ['PRODUCTO','CODIGO','COSTO USD','VENTA USD','STOCK','ESTIMADO USD'],
-  cosmeticos: ['PRODUCTO','CODIGO','COSTO USD','VENTA','STOCK','ESTIMADO']
+  bodega: ['PRODUCTO','CODIGO','COSTO USD','COSTO BS','VENTA USD','VENTA BS','STOCK','ESTIMADO USD','ESTIMADO BS'],
+  cosmeticos: ['PRODUCTO','CODIGO','COSTO USD','COSTO BS','VENTA USD','VENTA BS','STOCK','ESTIMADO USD','ESTIMADO BS']
 };
 
 function aviso(msg) {
@@ -197,14 +203,15 @@ function render() {
   } else {
   tb.innerHTML = rows.map(d => {
     const stock = Math.round(Number(d.existencia) || 0);
-    const est = ((Number(d.venta_usd) || 0) * stock).toFixed(2);
+    const venta = Number(d.venta_usd) || 0;
+    const est = (venta * stock).toFixed(2);
     return `<tr data-id="${d.id}" class="${esEditado(d) ? 'edited' : ''}">
       <td data-label="Producto"><input class="cell cell-text" type="text" value="${esc(d.producto || '')}" data-campo="producto" oninput="editar('${d.id}', this)"></td>
       <td data-label="Código"><input class="cell cell-text" type="text" value="${esc(d.codigo || '')}" data-campo="codigo" oninput="editar('${d.id}', this)"></td>
-      <td class="num" data-label="Costo USD"><input class="cell" type="number" step="0.01" min="0" value="${d.costo_usd ?? ''}" data-campo="costo_usd" oninput="editar('${d.id}', this)"></td>
-      <td class="num" data-label="Venta USD"><input class="cell" type="number" step="0.01" min="0" value="${d.venta_usd ?? ''}" data-campo="venta_usd" oninput="editar('${d.id}', this)"></td>
+      <td class="num" data-label="Costo USD"><span class="cur">$</span><input class="cell" type="number" step="0.01" min="0" value="${d.costo_usd ?? ''}" data-campo="costo_usd" oninput="editar('${d.id}', this)">${bs(d.costo_usd)}</td>
+      <td class="num" data-label="Venta USD"><span class="cur">$</span><input class="cell" type="number" step="0.01" min="0" value="${d.venta_usd ?? ''}" data-campo="venta_usd" oninput="editar('${d.id}', this)">${bs(d.venta_usd)}</td>
       <td class="num" data-label="Stock"><input class="cell" type="number" step="1" min="0" value="${d.existencia == null ? '' : Math.round(d.existencia)}" data-campo="existencia" oninput="editar('${d.id}', this)"></td>
-      <td class="num" data-label="Estimado USD">$${est}</td></tr>`;
+      <td class="num" data-label="Estimado USD">$${est}${bs(venta * stock)}</td></tr>`;
   }).join('');
   }
   document.getElementById('conteo').textContent = `${vista.length} productos`;
@@ -214,6 +221,30 @@ function render() {
 }
 
 function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+function fmtBs(n) {
+  const p = Number(n).toFixed(2).split('.');
+  return p[0].replace(/\B(?=(\d{3})+(?!\d))/g, '.') + ',' + p[1];
+}
+
+function bs(usd) {
+  if (!(tasaBCV > 0) || usd == null || usd === '') return '';
+  return `<div class="bs">Bs ${fmtBs(Number(usd) * tasaBCV)}</div>`;
+}
+
+async function cargarTasa() {
+  try {
+    const r = await fetch('https://ve.dolarapi.com/v1/dolares/oficial');
+    if (!r.ok) return;
+    const j = await r.json();
+    const t = Number(j.promedio || j.venta || j.compra);
+    if (t > 0) {
+      tasaBCV = Math.ceil(t); // redondeo hacia arriba
+      document.getElementById('tasa').value = tasaBCV;
+      render();
+    }
+  } catch (e) { /* queda manual */ }
+}
 
 function editar(id, input) {
   const d = datos.find(x => x.id === id);
@@ -362,13 +393,22 @@ function exportar() {
     return;
   }
   const head = HEADERS[sede];
-  const rows = datos.map(d => [
-    d.producto, d.codigo || '', Number(d.costo_usd) || 0,
-    Number(d.venta_usd) || 0, Math.round(Number(d.existencia) || 0),
-    Number(((Number(d.venta_usd) || 0) * Math.round(Number(d.existencia) || 0)).toFixed(2))
-  ]);
+  const t = tasaBCV > 0 ? tasaBCV : 0;
+  const rows = datos.map(d => {
+    const costo = Number(d.costo_usd) || 0;
+    const venta = Number(d.venta_usd) || 0;
+    const stock = Math.round(Number(d.existencia) || 0);
+    const estimado = venta * stock;
+    return [
+      d.producto, d.codigo || '',
+      costo, +(costo * t).toFixed(2),
+      venta, +(venta * t).toFixed(2),
+      stock,
+      +estimado.toFixed(2), +(estimado * t).toFixed(2)
+    ];
+  });
   const ws = XLSX.utils.aoa_to_sheet([head, ...rows]);
-  ws['!cols'] = [{ wch: 42 }, { wch: 18 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 14 }];
+  ws['!cols'] = [{ wch: 42 }, { wch: 18 }, { wch: 12 }, { wch: 14 }, { wch: 12 }, { wch: 14 }, { wch: 10 }, { wch: 14 }, { wch: 14 }];
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Inventario');
   XLSX.writeFile(wb, `inventario-${sede}-revisado.xlsx`);
@@ -376,6 +416,7 @@ function exportar() {
 }
 
 cargar();
+cargarTasa();
 </script>
 </body>
 </html>

@@ -161,12 +161,29 @@ async function scenarioStock() {
   runInContext('clearTimeout(timers["a2"])', ctx); // no disparar el autoguardado en el test
 }
 
+async function scenarioBs() {
+  console.log('\n[8] Signo $ y tasa BCV');
+  const ctx = buildSandbox();
+  runInContext(js, ctx);
+  for (let i = 0; i < 100 && get(ctx, 'datos.length') === 0 && !get(ctx, 'errorCarga'); i++) await sleep(100);
+  check('fmtBs 866.56', get(ctx, 'fmtBs(866.5612)') === '866,56');
+  check('fmtBs con miles', get(ctx, 'fmtBs(1663.03)') === '1.663,03');
+  // sin tasa no se muestra Bs
+  check('sin tasa no hay Bs', !ctx.__els['cuerpo'].innerHTML.includes('Bs '));
+  runInContext('tasaBCV = 867; render()', ctx);
+  const cuerpo = ctx.__els['cuerpo'].innerHTML;
+  check('signo $ en montos', cuerpo.includes('<span class="cur">$</span>'));
+  check('venta en Bs (3.57 x 867)', cuerpo.includes('Bs 3.095,19'));
+  check('costo en Bs (2.5 x 867)', cuerpo.includes('Bs 2.167,50'));
+}
+
 try {
   await scenarioLoad();
   await scenarioFail();
   await scenarioCostos();
   await scenarioPreciosDescartar();
   await scenarioStock();
+  await scenarioBs();
 } catch (e) {
   console.log('  FAIL excepción en el script: ' + e.message);
   failures++;

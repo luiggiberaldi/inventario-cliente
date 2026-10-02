@@ -102,9 +102,23 @@ async function scenarioFail() {
   check('muestra botón Reintentar', ctx.__els['cuerpo'].innerHTML.includes('Reintentar'));
 }
 
+async function scenarioCostos() {
+  console.log('\n[5] Calcular costos desde venta (margen 40%)');
+  const ctx = buildSandbox();
+  runInContext(js, ctx);
+  for (let i = 0; i < 100 && get(ctx, 'datos.length') === 0 && !get(ctx, 'errorCarga'); i++) await sleep(100);
+  runInContext("document.getElementById('margen').value = '40'", ctx);
+  await runInContext('(async () => { await calcularCostos(); })()', ctx);
+  // 3.57 * 0.6 = 2.142 -> 2.14 ; 4.2 * 0.6 = 2.52
+  check('costo de MAYONESA = 2.14', get(ctx, 'datos[0].costo_usd') === 2.14);
+  check('costo de ACEITE = 2.52', get(ctx, 'datos[1].costo_usd') === 2.52);
+  check('la tabla muestra el costo calculado', ctx.__els['cuerpo'].innerHTML.includes('2.14'));
+}
+
 try {
   await scenarioLoad();
   await scenarioFail();
+  await scenarioCostos();
 } catch (e) {
   console.log('  FAIL excepción en el script: ' + e.message);
   failures++;

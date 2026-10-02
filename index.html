@@ -71,7 +71,8 @@
     <input id="margen" type="number" step="0.1" min="0" max="99" value="30" style="width:70px;padding:8px;border:1px solid #ccd3da;border-radius:6px;font-size:14px">
   </label>
   <button class="btn btn-filter" onclick="calcularPrecios()">🧮 Calcular precios</button>
-  <span style="font-size:12px;color:#666">Precio = Costo ÷ (1 − margen). Se aplica a los productos con costo cargado.</span>
+  <button class="btn btn-filter" onclick="calcularCostos()">🧮 Calcular costos</button>
+  <span style="font-size:12px;color:#666">Precios: Costo → Venta. Costos: Venta → Costo. Se aplican a todos los artículos de la pestaña activa.</span>
 </div>
 <div class="hint">Todo es editable: toca <b>nombre</b>, <b>código</b>, <b>costo</b>, <b>venta</b> o <b>existencia</b> para corregir. Se guarda solo. Las filas en amarillo fueron modificadas.</div>
 <div class="wrap">
@@ -285,6 +286,32 @@ async function calcularPrecios() {
   }
   pag = 0; render();
   aviso(`${conCosto.length} precios calculados con ${m}% de margen real`);
+}
+
+async function calcularCostos() {
+  const m = Number(document.getElementById('margen').value);
+  if (!(m > 0 && m < 100)) { aviso('El margen debe estar entre 0 y 100'); return; }
+  const conVenta = datos.filter(d => Number(d.venta_usd) > 0);
+  if (!conVenta.length) { aviso('Ningún producto tiene precio de venta cargado'); return; }
+  const nombreSede = sede === 'bodega' ? 'Bodega' : 'Cosméticos';
+  if (!confirm(`Calcular costo con ${m}% de margen real para ${conVenta.length} productos de ${nombreSede}?\n\nCosto = Venta × (1 − ${m / 100})`)) return;
+  aviso('Calculando…');
+  const factor = 1 - m / 100;
+  for (const d of conVenta) {
+    d.costo_usd = Math.round(Number(d.venta_usd) * factor * 100) / 100;
+  }
+  // guardado en lotes
+  for (let i = 0; i < conVenta.length; i += 200) {
+    const lote = conVenta.slice(i, i + 200);
+    const r = await fetch(`${API}/items?on_conflict=id`, {
+      method: 'POST',
+      headers: { ...HEAD, 'Prefer': 'resolution=merge-duplicates,return=minimal' },
+      body: JSON.stringify(lote.map(d => ({ id: d.id, costo_usd: d.costo_usd, actualizado_en: new Date().toISOString() })))
+    });
+    if (!r.ok) { aviso('Error guardando: HTTP ' + r.status); break; }
+  }
+  pag = 0; filtrar();
+  aviso(`${conVenta.length} costos calculados con ${m}% de margen real`);
 }
 
 function exportar() {

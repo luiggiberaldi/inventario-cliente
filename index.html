@@ -90,11 +90,10 @@
 </div>
 <div class="status" id="status"></div>
 
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="config.js"></script>
 <script>
-const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const API = SUPABASE_URL + '/rest/v1';
+const HEAD = { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + SUPABASE_ANON_KEY, 'Content-Type': 'application/json' };
 let sede = 'bodega';
 let datos = [];          // todos los items de la sede
 let originales = {};     // id -> {venta_usd, existencia}
@@ -116,6 +115,12 @@ function aviso(msg) {
   clearTimeout(s._t); s._t = setTimeout(() => s.style.display = 'none', 2200);
 }
 
+async function apiGet(url) {
+  const r = await fetch(url, { headers: HEAD });
+  if (!r.ok) throw new Error('HTTP ' + r.status);
+  return r.json();
+}
+
 async function cargar() {
   aviso('Cargando inventario…');
   errorCarga = false;
@@ -126,9 +131,7 @@ async function cargar() {
       todo = [];
       let desde = 0;
       while (true) {
-        const { data, error } = await sb.from('items').select('*').eq('sede', sede)
-          .order('producto').range(desde, desde + PASO - 1);
-        if (error) throw new Error(error.message);
+        const data = await apiGet(`${API}/items?select=*&sede=eq.${sede}&order=producto&limit=${PASO}&offset=${desde}`);
         todo = todo.concat(data);
         if (data.length < PASO) break;
         desde += PASO;
@@ -216,13 +219,22 @@ function editar(id, input) {
 
 async function guardar(id, tr) {
   const d = datos.find(x => x.id === id);
-  const { error } = await sb.from('items').update({
-    producto: d.producto, codigo: d.codigo,
-    venta_usd: d.venta_usd, existencia: d.existencia, costo_usd: d.costo_usd,
-    actualizado_en: new Date().toISOString()
-  }).eq('id', id);
+  try {
+    const r = await fetch(`${API}/items?id=eq.${id}`, {
+      method: 'PATCH', headers: HEAD,
+      body: JSON.stringify({
+        producto: d.producto, codigo: d.codigo,
+        venta_usd: d.venta_usd, existencia: d.existencia, costo_usd: d.costo_usd,
+        actualizado_en: new Date().toISOString()
+      })
+    });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+  } catch (e) {
+    tr.classList.remove('saving');
+    aviso('No se pudo guardar: ' + e.message);
+    return;
+  }
   tr.classList.remove('saving');
-  if (error) { aviso('No se pudo guardar: ' + error.message); return; }
   tr.classList.toggle('edited', esEditado(d));
   const nEd = datos.filter(esEditado).length;
   document.getElementById('editados').textContent = nEd ? `✏️ ${nEd} editados` : '';
@@ -264,17 +276,27 @@ async function calcularPrecios() {
   // guardado en lotes
   for (let i = 0; i < conCosto.length; i += 200) {
     const lote = conCosto.slice(i, i + 200);
-    const { error } = await sb.from('items').upsert(
-      lote.map(d => ({ id: d.id, venta_usd: d.venta_usd, actualizado_en: new Date().toISOString() })),
-      { onConflict: 'id' }
-    );
-    if (error) { aviso('Error guardando: ' + error.message); break; }
+    const r = await fetch(`${API}/items?on_conflict=id`, {
+      method: 'POST',
+      headers: { ...HEAD, 'Prefer': 'resolution=merge-duplicates,return=minimal' },
+      body: JSON.stringify(lote.map(d => ({ id: d.id, venta_usd: d.venta_usd, actualizado_en: new Date().toISOString() })))
+    });
+    if (!r.ok) { aviso('Error guardando: HTTP ' + r.status); break; }
   }
   pag = 0; render();
   aviso(`${conCosto.length} precios calculados con ${m}% de margen real`);
 }
 
 function exportar() {
+  if (typeof XLSX === 'undefined') {
+    aviso('Cargando generador de Excel…');
+    const s = document.createElement('script');
+    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+    s.onload = () => exportar();
+    s.onerror = () => aviso('Sin conexión para generar el Excel');
+    document.head.appendChild(s);
+    return;
+  }
   const head = HEADERS[sede];
   const rows = datos.map(d => [
     d.producto, d.codigo || '', Number(d.costo_usd) || 0,

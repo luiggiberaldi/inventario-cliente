@@ -47,6 +47,10 @@ function buildSandbox({ failFetch = false } = {}) {
       if (String(url).includes('/rest/v1/items?')) {
         return { ok: true, json: async () => JSON.parse(JSON.stringify(FAKE_ITEMS)) };
       }
+      if (String(url).includes('/rpc/items_batch_update')) {
+        const n = JSON.parse(opts.body).p_rows.length;
+        return { ok: true, json: async () => n };
+      }
       return { ok: true, json: async () => ({}) };
     },
     confirm: () => true,
@@ -123,8 +127,9 @@ async function scenarioCostos() {
   await runInContext('(async () => { await guardarCalculados(); })()', ctx);
   const posts = ctx.calls.filter(c => c.method === 'POST');
   check('se hizo 1 POST al guardar', posts.length === 1);
+  check('el POST va al RPC batch', posts[0].url.includes('/rpc/items_batch_update'));
   const body = JSON.parse(posts[0].body);
-  check('el POST lleva costo_usd 2.14', body[0].costo_usd === 2.14 && body[0].id === 'a1');
+  check('el RPC lleva p_rows con costo_usd 2.14', body.p_rows[0].costo_usd === 2.14 && body.p_rows[0].id === 'a1');
   check('barra de Guardar oculta tras guardar', ctx.__els['savebar'].style.display === 'none');
   check('no quedan pendientes', get(ctx, 'pendientesCalc.size') === 0);
 }
@@ -175,6 +180,9 @@ async function scenarioBs() {
   check('signo $ en montos', cuerpo.includes('<span class="cur">$</span>'));
   check('venta en Bs (3.57 x 867)', cuerpo.includes('Bs 3.095,19'));
   check('costo en Bs (2.5 x 867)', cuerpo.includes('Bs 2.167,50'));
+  check('ficha con grid (cell-producto)', cuerpo.includes('cell-producto'));
+  check('estimado destacado (est-box)', cuerpo.includes('est-box'));
+  check('input con $ integrado (money)', cuerpo.includes('class="money"'));
 }
 
 try {

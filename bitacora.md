@@ -23,6 +23,10 @@ DB: Supabase `inventario-cliente` (tabla pública `items`, 5.411 productos).
 - Causa 1: el botón "Ver solo editados" quedaba activo sin editados → mostraba 0 sin explicación. Ahora el botón dice "✓ Solo editados" cuando está activo y hay mensaje claro en cada estado vacío.
 - Causa 2: si la red fallaba a mitad de carga quedaba en 0. Ahora reintenta 3 veces y muestra botón "Reintentar".
 
+## 2026-10-02 — Sin "Estimado USD" en la ficha
+- luigi pidió quitarlo de la tarjeta. Se eliminó la columna/caja de estimado de la interfaz (tabla escritorio y tarjeta móvil).
+- El Excel conserva las columnas ESTIMADO USD/BS por si las quiere; avisarle.
+
 ## 2026-10-02 — Fix guardar en lote (RPC) + rediseño de ficha
 - Error "HTTP 400" al guardar cálculos: el upsert por REST fallaba porque `items.id` (uuid) no tenía PK y PostgREST intentaba INSERT (violaba not-null de `sede`). Se agregó `PRIMARY KEY (id)` (verificado: 5411/5411 únicos) y se creó la función `public.items_batch_update(jsonb)` (SECURITY DEFINER, solo actualiza venta_usd/costo_usd/actualizado_en, con GRANT a anon). `guardarCalculados()` ahora hace UNA llamada al RPC en vez de 13 upserts. Verificado end-to-end con curl (guarda, cuenta filas, restaura).
 - Rediseño de la ficha de producto (móvil): tarjeta en grid 2 columnas (producto y código a ancho completo), nombre en negrita 16px, código como chip monoespaciado, $ integrado al input, estimado en caja verde destacada, sombra sutil, borde ámbar cuando está editada. En escritorio: hover en filas.

@@ -159,7 +159,6 @@ async function scenarioStock() {
   const cuerpo = ctx.__els['cuerpo'].innerHTML;
   check('etiqueta "Stock" en la columna', cuerpo.includes('data-label="Stock"'));
   check('stock 5.7 se muestra como 6', cuerpo.includes('value="6"'));
-  check('estimado usa stock redondeado ($25.20)', cuerpo.includes('$25.20'));
   // editar con decimal -> se redondea al guardar en memoria
   runInContext(`editar('a2', { value: '7.8', dataset: { campo: 'existencia' }, closest: () => ({ classList: { add(){}, remove(){}, toggle(){} } }) })`, ctx);
   check('editar 7.8 queda en 8', get(ctx, 'datos.find(x=>x.id==="a2").existencia') === 8);
@@ -181,7 +180,7 @@ async function scenarioBs() {
   check('venta en Bs (3.57 x 867)', cuerpo.includes('Bs 3.095,19'));
   check('costo en Bs (2.5 x 867)', cuerpo.includes('Bs 2.167,50'));
   check('ficha con grid (cell-producto)', cuerpo.includes('cell-producto'));
-  check('estimado destacado (est-box)', cuerpo.includes('est-box'));
+  check('sin estimado en la ficha', !cuerpo.includes('Estimado USD'));
   check('input con $ integrado (money)', cuerpo.includes('class="money"'));
 }
 

@@ -43,7 +43,6 @@
   .money { display: flex; align-items: center; gap: 6px; }
   .money .cell { flex: 1; min-width: 0; }
   .stock-input { font-size: 16px; font-weight: 700; text-align: center; }
-  .est-box { background: #eaf7f0; color: #0a7d4f; font-weight: 800; font-size: 16px; border-radius: 10px; padding: 8px 12px; display: inline-block; }
   @media (min-width: 641px) {
     tbody tr:hover td { background: #f8fafc; }
     tbody tr.edited:hover td { background: #fff4d6; }
@@ -107,7 +106,7 @@
   <table>
     <thead><tr>
       <th>Producto</th><th>Código</th><th style="text-align:right">Costo USD</th><th style="text-align:right">Venta USD</th>
-      <th style="text-align:right">Stock</th><th style="text-align:right">Estimado USD</th>
+      <th style="text-align:right">Stock</th>
     </tr></thead>
     <tbody id="cuerpo"></tbody>
   </table>
@@ -216,19 +215,16 @@ function render() {
     if (errorCarga) msg = '⚠️ No se pudo cargar el inventario (sin conexión).<br><button class="btn btn-export" style="margin-top:10px" onclick="cargar()">Reintentar</button>';
     else if (soloEditados) msg = 'Aún no hay productos editados.<br>Toca "✓ Solo editados" para ver el inventario completo.';
     else msg = 'Sin resultados para esa búsqueda.';
-    tb.innerHTML = `<tr><td colspan="6" style="text-align:center;padding:40px 20px;color:#666;font-size:15px">${msg}</td></tr>`;
+    tb.innerHTML = `<tr><td colspan="5" style="text-align:center;padding:40px 20px;color:#666;font-size:15px">${msg}</td></tr>`;
   } else {
   tb.innerHTML = rows.map(d => {
-    const stock = Math.round(Number(d.existencia) || 0);
     const venta = Number(d.venta_usd) || 0;
-    const est = (venta * stock).toFixed(2);
     return `<tr data-id="${d.id}" class="${esEditado(d) ? 'edited' : ''}">
       <td class="cell-producto" data-label="Producto"><input class="cell cell-text producto-nombre" type="text" value="${esc(d.producto || '')}" data-campo="producto" oninput="editar('${d.id}', this)"></td>
       <td class="cell-codigo" data-label="Código"><input class="cell cell-text codigo-chip" type="text" value="${esc(d.codigo || '')}" data-campo="codigo" oninput="editar('${d.id}', this)"></td>
       <td class="num" data-label="Costo USD"><div class="money"><span class="cur">$</span><input class="cell" type="number" step="0.01" min="0" value="${d.costo_usd ?? ''}" data-campo="costo_usd" oninput="editar('${d.id}', this)"></div>${bs(d.costo_usd)}</td>
       <td class="num" data-label="Venta USD"><div class="money"><span class="cur">$</span><input class="cell" type="number" step="0.01" min="0" value="${d.venta_usd ?? ''}" data-campo="venta_usd" oninput="editar('${d.id}', this)"></div>${bs(d.venta_usd)}</td>
-      <td class="num" data-label="Stock"><input class="cell stock-input" type="number" step="1" min="0" value="${d.existencia == null ? '' : Math.round(d.existencia)}" data-campo="existencia" oninput="editar('${d.id}', this)"></td>
-      <td class="num" data-label="Estimado USD"><div class="est-box">$${est}</div>${bs(venta * stock)}</td></tr>`;
+      <td class="num" data-label="Stock"><input class="cell stock-input" type="number" step="1" min="0" value="${d.existencia == null ? '' : Math.round(d.existencia)}" data-campo="existencia" oninput="editar('${d.id}', this)"></td></tr>`;
   }).join('');
   }
   document.getElementById('conteo').textContent = `${vista.length} productos`;

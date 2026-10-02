@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Revisa tu inventario</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; background: #f4f6f8; color: #1a1a1a; }
+  header { background: #0f2a43; color: #fff; padding: 16px 20px; position: sticky; top: 0; z-index: 10; }
+  header h1 { font-size: 18px; font-weight: 700; }
+  header p { font-size: 13px; opacity: .75; margin-top: 2px; }
+  .tabs { display: flex; gap: 8px; padding: 12px 20px 0; }
+  .tabs button { flex: 1; padding: 12px; border: none; border-radius: 10px 10px 0 0; background: #dde3e8; font-size: 15px; font-weight: 600; cursor: pointer; color: #445; }
+  .tabs button.active { background: #fff; color: #0f2a43; }
+  .toolbar { background: #fff; padding: 12px 20px; display: flex; gap: 10px; flex-wrap: wrap; align-items: center; border-bottom: 1px solid #e2e6ea; position: sticky; top: 69px; z-index: 9; }
+  .toolbar input[type="search"] { flex: 1; min-width: 180px; padding: 10px 14px; border: 1px solid #ccd3da; border-radius: 8px; font-size: 15px; }
+  .toolbar .count { font-size: 13px; color: #666; white-space: nowrap; }
+  .toolbar .edited { font-size: 13px; font-weight: 700; color: #0a7d4f; white-space: nowrap; }
+  .btn { padding: 10px 16px; border: none; border-radius: 8px; font-size: 14px; font-weight: 700; cursor: pointer; }
+  .btn-export { background: #0a7d4f; color: #fff; }
+  .btn-filter { background: #eef1f4; color: #0f2a43; }
+  .btn-filter.on { background: #0f2a43; color: #fff; }
+  .wrap { overflow-x: auto; padding: 0 0 40px; }
+  table { width: 100%; border-collapse: collapse; background: #fff; font-size: 14px; min-width: 640px; }
+  thead th { text-align: left; padding: 10px 12px; background: #0f2a43; color: #fff; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; position: sticky; top: 133px; }
+  tbody td { padding: 8px 12px; border-bottom: 1px solid #eef1f4; }
+  tbody tr.edited td { background: #fff8e6; }
+  td.num { text-align: right; white-space: nowrap; }
+  input.cell { width: 90px; padding: 8px; border: 1px solid #ccd3da; border-radius: 6px; font-size: 14px; text-align: right; }
+  input.cell:focus { outline: 2px solid #0f2a43; border-color: #0f2a43; }
+  tr.saving input.cell { border-color: #e0a800; background: #fffbe6; }
+  .pager { display: flex; gap: 10px; align-items: center; justify-content: center; padding: 16px; background: #fff; font-size: 14px; }
+  .hint { padding: 10px 20px; font-size: 13px; color: #666; background: #fff; border-bottom: 1px solid #e2e6ea; }
+  .status { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); background: #0f2a43; color: #fff; padding: 10px 20px; border-radius: 24px; font-size: 14px; display: none; z-index: 20; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Revisa tu inventario</h1>
+  <p>Busca cada producto y corrige la <b>existencia</b> o el <b>precio</b> si hay algún error. Se guarda solo.</p>
+</header>
+<div class="tabs">
+  <button id="tab-bodega" class="active" onclick="cambiarSede('bodega')">🏪 Bodega</button>
+  <button id="tab-cosmeticos" onclick="cambiarSede('cosmeticos')">💄 Cosméticos</button>
+</div>
+<div class="toolbar">
+  <input type="search" id="buscador" placeholder="Buscar por nombre o código…" oninput="filtrar()">
+  <span class="count" id="conteo"></span>
+  <span class="edited" id="editados"></span>
+  <button class="btn btn-filter" id="btnEditados" onclick="toggleEditados()">Ver solo editados</button>
+  <button class="btn btn-export" onclick="exportar()">⬇ Descargar Excel</button>
+</div>
+<div class="hint">Toca los números de <b>Venta USD</b> o <b>Existencia</b> para corregirlos. Las filas en amarillo fueron modificadas.</div>
+<div class="wrap">
+  <table>
+    <thead><tr>
+      <th>Producto</th><th>Código</th><th style="text-align:right">Venta USD</th>
+      <th style="text-align:right">Existencia</th><th style="text-align:right">Estimado USD</th>
+    </tr></thead>
+    <tbody id="cuerpo"></tbody>
+  </table>
+</div>
+<div class="pager">
+  <button class="btn btn-filter" onclick="pagina(-1)">← Anterior</button>
+  <span id="paginfo"></span>
+  <button class="btn btn-filter" onclick="pagina(1)">Siguiente →</button>
+</div>
+<div class="status" id="status"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="config.js"></script>
+<script>
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+let sede = 'bodega';
+let datos = [];          // todos los items de la sede
+let originales = {};     // id -> {venta_usd, existencia}
+let vista = [];          // filtrados
+let pag = 0;
+const POR_PAG = 100;
+let soloEditados = false;
+const timers = {};
+
+const HEADERS = {
+  bodega: ['PRODUCTO','CODIGO','VENTA USD','EXISTENCIA','ESTIMADO USD'],
+  cosmeticos: ['PRODUCTO','CODIGO','VENTA','EXISTENCIA','ESTIMADO']
+};
+
+function aviso(msg) {
+  const s = document.getElementById('status');
+  s.textContent = msg; s.style.display = 'block';
+  clearTimeout(s._t); s._t = setTimeout(() => s.style.display = 'none', 2200);
+}
+
+async function cargar() {
+  aviso('Cargando inventario…');
+  const { data, error } = await sb.from('items').select('*').eq('sede', sede).order('producto');
+  if (error) { aviso('Error cargando: ' + error.message); return; }
+  datos = data;
+  originales = {};
+  data.forEach(d => originales[d.id] = { venta_usd: d.venta_usd, existencia: d.existencia });
+  pag = 0; soloEditados = false;
+  document.getElementById('btnEditados').classList.remove('on');
+  document.getElementById('buscador').value = '';
+  filtrar();
+  aviso('Listo');
+}
+
+function esEditado(d) {
+  const o = originales[d.id];
+  return o && (Number(d.venta_usd) !== Number(o.venta_usd) || Number(d.existencia) !== Number(o.existencia));
+}
+
+function filtrar() {
+  const q = document.getElementById('buscador').value.trim().toLowerCase();
+  vista = datos.filter(d => {
+    if (soloEditados && !esEditado(d)) return false;
+    if (!q) return true;
+    return (d.producto || '').toLowerCase().includes(q) || (d.codigo || '').toLowerCase().includes(q);
+  });
+  const totalPag = Math.max(1, Math.ceil(vista.length / POR_PAG));
+  if (pag >= totalPag) pag = totalPag - 1;
+  render();
+}
+
+function render() {
+  const tb = document.getElementById('cuerpo');
+  const ini = pag * POR_PAG;
+  const rows = vista.slice(ini, ini + POR_PAG);
+  tb.innerHTML = rows.map(d => {
+    const est = ((Number(d.venta_usd) || 0) * (Number(d.existencia) || 0)).toFixed(2);
+    return `<tr data-id="${d.id}" class="${esEditado(d) ? 'edited' : ''}">
+      <td>${esc(d.producto)}</td><td>${esc(d.codigo || '')}</td>
+      <td class="num"><input class="cell" type="number" step="0.01" min="0" value="${d.venta_usd ?? ''}" data-campo="venta_usd" oninput="editar('${d.id}', this)"></td>
+      <td class="num"><input class="cell" type="number" step="0.001" min="0" value="${d.existencia ?? ''}" data-campo="existencia" oninput="editar('${d.id}', this)"></td>
+      <td class="num">$${est}</td></tr>`;
+  }).join('');
+  document.getElementById('conteo').textContent = `${vista.length} productos`;
+  const nEd = datos.filter(esEditado).length;
+  document.getElementById('editados').textContent = nEd ? `✏️ ${nEd} editados` : '';
+  document.getElementById('paginfo').textContent = `Página ${pag + 1} de ${Math.max(1, Math.ceil(vista.length / POR_PAG))}`;
+}
+
+function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+function editar(id, input) {
+  const d = datos.find(x => x.id === id);
+  if (!d) return;
+  const campo = input.dataset.campo;
+  d[campo] = input.value === '' ? null : Number(input.value);
+  const tr = input.closest('tr');
+  tr.classList.add('saving');
+  clearTimeout(timers[id]);
+  timers[id] = setTimeout(() => guardar(id, tr), 800);
+}
+
+async function guardar(id, tr) {
+  const d = datos.find(x => x.id === id);
+  const { error } = await sb.from('items').update({
+    venta_usd: d.venta_usd, existencia: d.existencia, actualizado_en: new Date().toISOString()
+  }).eq('id', id);
+  tr.classList.remove('saving');
+  if (error) { aviso('No se pudo guardar: ' + error.message); return; }
+  tr.classList.toggle('edited', esEditado(d));
+  const nEd = datos.filter(esEditado).length;
+  document.getElementById('editados').textContent = nEd ? `✏️ ${nEd} editados` : '';
+}
+
+function cambiarSede(s) {
+  sede = s;
+  document.getElementById('tab-bodega').classList.toggle('active', s === 'bodega');
+  document.getElementById('tab-cosmeticos').classList.toggle('active', s === 'cosmeticos');
+  cargar();
+}
+
+function pagina(dir) {
+  const totalPag = Math.max(1, Math.ceil(vista.length / POR_PAG));
+  pag = Math.min(totalPag - 1, Math.max(0, pag + dir));
+  render();
+  window.scrollTo(0, 0);
+}
+
+function toggleEditados() {
+  soloEditados = !soloEditados;
+  document.getElementById('btnEditados').classList.toggle('on', soloEditados);
+  pag = 0; filtrar();
+}
+
+function exportar() {
+  const head = HEADERS[sede];
+  const rows = datos.map(d => [
+    d.producto, d.codigo || '',
+    Number(d.venta_usd) || 0, Number(d.existencia) || 0,
+    Number(((Number(d.venta_usd) || 0) * (Number(d.existencia) || 0)).toFixed(2))
+  ]);
+  const ws = XLSX.utils.aoa_to_sheet([head, ...rows]);
+  ws['!cols'] = [{ wch: 42 }, { wch: 18 }, { wch: 12 }, { wch: 12 }, { wch: 14 }];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Inventario');
+  XLSX.writeFile(wb, `inventario-${sede}-revisado.xlsx`);
+  aviso('Excel descargado');
+}
+
+cargar();
+</script>
+</body>
+</html>

@@ -146,7 +146,7 @@ async function cargar() {
   if (todo === null) { errorCarga = true; filtrar(); return; }
   datos = todo;
   originales = {};
-  data.forEach(d => originales[d.id] = { producto: d.producto, codigo: d.codigo, venta_usd: d.venta_usd, existencia: d.existencia, costo_usd: d.costo_usd });
+  todo.forEach(d => originales[d.id] = { producto: d.producto, codigo: d.codigo, venta_usd: d.venta_usd, existencia: d.existencia, costo_usd: d.costo_usd });
   pag = 0; soloEditados = false;
   const btnE = document.getElementById('btnEditados');
   btnE.classList.remove('on'); btnE.textContent = 'Ver solo editados';

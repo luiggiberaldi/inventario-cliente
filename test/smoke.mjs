@@ -1,0 +1,114 @@
+// Prueba de humo determinista para inventario-cliente.
+// Extrae el <script> en línea de index.html, lo ejecuta con un DOM y fetch
+// simulados, y verifica el pipeline completo: carga -> originales -> render.
+// Si el script muere a mitad de camino (como pasó con `data.forEach`),
+// la prueba falla. Correr con: node test/smoke.mjs
+import { readFileSync } from 'fs';
+import { createContext, runInContext } from 'vm';
+import { dirname, join } from 'path';
+import { fileURLToPath } from 'url';
+
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
+const html = readFileSync(join(ROOT, 'index.html'), 'utf8');
+const scripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(m => m[1]);
+if (!scripts.length) { console.error('FAIL: no se encontró el script en línea'); process.exit(1); }
+const js = scripts[scripts.length - 1];
+
+const FAKE_ITEMS = [
+  { id: 'a1', sede: 'bodega', producto: 'MAYONESA KRAFT 500 GR', codigo: 'MK500', costo_usd: 2.5, venta_usd: 3.57, existencia: 10 },
+  { id: 'a2', sede: 'bodega', producto: 'ACEITE Vatel 1L', codigo: 'AV1', costo_usd: null, venta_usd: 4.2, existencia: 5 },
+];
+
+function makeEl() {
+  return {
+    textContent: '', innerHTML: '', value: '', style: {}, dataset: {},
+    classList: { add() {}, remove() {}, toggle() {} },
+    closest() { return makeEl(); },
+    addEventListener() {},
+  };
+}
+
+function buildSandbox({ failFetch = false } = {}) {
+  const els = {};
+  const document = {
+    getElementById: (id) => (els[id] ??= makeEl()),
+    createElement: () => ({ src: '', onload: null, onerror: null }),
+    head: { appendChild() {} },
+  };
+  const sandbox = {
+    SUPABASE_URL: 'https://fake.supabase.co',
+    SUPABASE_ANON_KEY: 'fake-key',
+    document,
+    fetch: async (url) => {
+      if (failFetch) throw new Error('network down');
+      if (String(url).includes('/rest/v1/items?')) {
+        return { ok: true, json: async () => FAKE_ITEMS };
+      }
+      return { ok: true, json: async () => ({}) };
+    },
+    confirm: () => true,
+    window: { scrollTo() {} },
+    setTimeout, clearTimeout,
+    console,
+    __els: els,
+  };
+  sandbox.globalThis = sandbox;
+  return createContext(sandbox);
+}
+
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+let failures = 0;
+function check(name, cond) {
+  console.log((cond ? '  ok  ' : '  FAIL') + ' ' + name);
+  if (!cond) failures++;
+}
+
+const get = (ctx, expr) => runInContext(expr, ctx);
+
+async function scenarioLoad() {
+  console.log('\n[1] Carga exitosa dibuja la tabla');
+  const ctx = buildSandbox();
+  runInContext(js, ctx); // si el script lanza ReferenceError, esto truena
+  // esperar a que cargar() termine (reintentos como máximo ~4.5s en fallo)
+  for (let i = 0; i < 100 && get(ctx, 'datos.length') === 0 && !get(ctx, 'errorCarga'); i++) await sleep(100);
+  check('no hubo error de carga', get(ctx, 'errorCarga') === false);
+  check('datos cargados (2)', get(ctx, 'datos.length') === 2);
+  check('originales poblados', get(ctx, 'Object.keys(originales).length') === 2);
+  const cuerpo = ctx.__els['cuerpo'].innerHTML;
+  check('la tabla muestra MAYONESA KRAFT', cuerpo.includes('MAYONESA KRAFT'));
+  check('la tabla muestra ACEITE Vatel', cuerpo.includes('ACEITE Vatel'));
+  check('contador dice "2 productos"', ctx.__els['conteo'].textContent === '2 productos');
+  check('paginador dice "Página 1 de 1"', ctx.__els['paginfo'].textContent === 'Página 1 de 1');
+
+  console.log('\n[2] Buscador filtra');
+  ctx.__els['buscador'].value = 'mayonesa';
+  runInContext('filtrar()', ctx);
+  check('vista filtrada (1)', get(ctx, 'vista.length') === 1);
+  check('contador dice "1 productos"', ctx.__els['conteo'].textContent === '1 productos');
+
+  console.log('\n[3] Filtro "solo editados" sin editados');
+  ctx.__els['buscador'].value = '';
+  runInContext('toggleEditados()', ctx);
+  check('botón muestra ✓', ctx.__els['btnEditados'].textContent === '✓ Solo editados');
+  check('mensaje de vacío útil', ctx.__els['cuerpo'].innerHTML.includes('Aún no hay productos editados'));
+}
+
+async function scenarioFail() {
+  console.log('\n[4] Sin conexión muestra Reintentar');
+  const ctx = buildSandbox({ failFetch: true });
+  runInContext(js, ctx);
+  for (let i = 0; i < 120 && !get(ctx, 'errorCarga'); i++) await sleep(100);
+  check('errorCarga = true', get(ctx, 'errorCarga') === true);
+  check('muestra botón Reintentar', ctx.__els['cuerpo'].innerHTML.includes('Reintentar'));
+}
+
+try {
+  await scenarioLoad();
+  await scenarioFail();
+} catch (e) {
+  console.log('  FAIL excepción en el script: ' + e.message);
+  failures++;
+}
+
+console.log(failures ? `\n${failures} FALLA(S)` : '\nTODO OK');
+process.exit(failures ? 1 : 0);
